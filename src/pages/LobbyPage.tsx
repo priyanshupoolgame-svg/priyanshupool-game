@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlayCircle, Users, Key, History, User, Coins, ShieldCheck, ChevronRight } from 'lucide-react';
+import { PlayCircle, Users, Key, History, User, Coins, Landmark, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { Header } from '../components/Header';
 import { MatchEntryConfirmModal, LowCoinsModal } from '../components/Modals';
@@ -13,10 +13,18 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
   const [selectedFee, setSelectedFee] = useState(5000);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showLowCoinsModal, setShowLowCoinsModal] = useState(false);
+  const [showSuspendedModal, setShowSuspendedModal] = useState(false);
 
+  if (!user) return null;
+
+  const isSuspended = user.status === 'SUSPENDED' || user.isBlocked;
   const pendingInvites = invitations.filter(i => i.status === 'PENDING').length;
 
   const handleQuickMatchClick = () => {
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+      return;
+    }
     if (user.coins < selectedFee) {
       setShowLowCoinsModal(true);
     } else {
@@ -26,12 +34,28 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
 
   const handleConfirmMatch = () => {
     setShowConfirmModal(false);
-    const success = startQuickMatch(selectedFee);
-    if (!success) {
-      setShowLowCoinsModal(true);
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+      return;
+    }
+    const result = startQuickMatch(selectedFee);
+    if (!result.success) {
+      if (result.error?.includes('suspended')) {
+        setShowSuspendedModal(true);
+      } else {
+        setShowLowCoinsModal(true);
+      }
     } else {
       onNavigate('/matchmaking');
     }
+  };
+
+  const handleFriendClick = () => {
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+      return;
+    }
+    onNavigate('/play-with-friend');
   };
 
   return (
@@ -42,6 +66,19 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 py-5 space-y-4">
+        {/* Account Suspended Alert Banner */}
+        {isSuspended && (
+          <div className="bg-rose-500/15 border border-rose-500/40 rounded-2xl p-4 flex items-start space-x-3 text-rose-300 animate-fadeIn">
+            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-black text-sm text-rose-400">Account Suspended</h4>
+              <p className="text-xs text-rose-200/90 mt-0.5">
+                Your account has been suspended. Please contact support. You cannot enter matchmaking or join active multiplayer games.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Hero Card */}
         <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-[#0F2027] via-[#203A43] to-[#2C5364] p-5 shadow-xl">
           <div className="flex items-center justify-between">
@@ -97,7 +134,7 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => onNavigate('/play-with-friend')}
+              onClick={handleFriendClick}
               className="bg-[#0F172A] border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 text-left transition-all relative group"
             >
               <div className="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center mb-2.5">
@@ -113,7 +150,7 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
             </button>
 
             <button
-              onClick={() => onNavigate('/play-with-friend')}
+              onClick={handleFriendClick}
               className="bg-[#0F172A] border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 text-left transition-all"
             >
               <div className="w-9 h-9 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center mb-2.5">
@@ -172,23 +209,44 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
           <ChevronRight className="w-5 h-5 text-slate-500" />
         </button>
 
-        {/* Admin Architecture Console */}
+        {/* Withdraw Coins Row (Controlled Redemption) */}
         <button
-          onClick={() => onNavigate('/admin')}
-          className="w-full bg-[#0F172A] border border-purple-500/30 hover:border-purple-500/50 rounded-xl p-3.5 flex items-center justify-between text-left transition-all"
+          onClick={() => onNavigate('/withdraw')}
+          className="w-full bg-[#0F172A] border border-emerald-500/30 hover:border-emerald-500/60 rounded-xl p-3.5 flex items-center justify-between text-left transition-all"
         >
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <Landmark className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-slate-100">Admin Architecture Console</h4>
-              <p className="text-xs text-slate-400">Manage players, requests & matches</p>
+              <h4 className="text-sm font-bold text-slate-100">Withdraw Coins</h4>
+              <p className="text-xs text-slate-400">Controlled redemption (Min: 500K = ₹100)</p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-purple-400/70" />
+          <ChevronRight className="w-5 h-5 text-emerald-400" />
         </button>
       </main>
+
+      {/* Account Suspended Notice Modal */}
+      {showSuspendedModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-[#0F172A] border border-rose-500/50 w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400 mb-4 border border-rose-500/40">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl font-black text-rose-400 mb-2">Account Suspended</h3>
+            <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+              Your account has been suspended. Please contact support.
+            </p>
+            <button
+              onClick={() => setShowSuspendedModal(false)}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation & Alert Modals */}
       {showConfirmModal && (

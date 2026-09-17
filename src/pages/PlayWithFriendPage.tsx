@@ -13,6 +13,8 @@ export const PlayWithFriendPage: React.FC<PlayWithFriendPageProps> = ({ onNaviga
   const [copied, setCopied] = useState(false);
   const [sentNotice, setSentNotice] = useState<string | null>(null);
 
+  if (!user) return null;
+
   const pendingInvites = invitations.filter(i => i.status === 'PENDING' && i.toPlayerId === user.playerId);
 
   const handleCopy = () => {

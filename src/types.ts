@@ -49,14 +49,20 @@ export interface AimGuideData {
 export interface UserProfile {
   id: string;
   playerId: string;
+  username: string;
+  email: string;
+  passwordHash: string;
   name: string;
   avatarId: number;
   coins: number;
+  status: 'ACTIVE' | 'SUSPENDED';
   matchesPlayed: number;
   wins: number;
   losses: number;
   createdAt: number;
-  isBlocked: boolean;
+  updatedAt: number;
+  lastActive: number;
+  isBlocked: boolean; // Alias for suspended for compatibility
 }
 
 export interface MatchRecord {
@@ -87,4 +93,63 @@ export interface CoinRequest {
   amount: number;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   timestamp: number;
+  processedAt?: number;
+  adminId?: string;
+}
+
+export type TransactionType =
+  | 'ADMIN_ADD'
+  | 'ADMIN_DEDUCT'
+  | 'MATCH_ENTRY'
+  | 'MATCH_REWARD'
+  | 'USER_REQUEST'
+  | 'WITHDRAWAL_LOCK'
+  | 'WITHDRAWAL_PAYOUT'
+  | 'WITHDRAWAL_REFUND'
+  | 'OTHER';
+
+export interface CoinTransaction {
+  id: string; // e.g. TXN928374
+  adminId: string;
+  playerId: string;
+  playerName: string;
+  type: TransactionType;
+  amount: number;
+  previousPlayerBalance: number;
+  newPlayerBalance: number;
+  previousAdminBalance: number;
+  newAdminBalance: number;
+  timestamp: number;
+  reason: string;
+  status: 'COMPLETED' | 'FAILED';
+}
+
+export interface WithdrawalRequest {
+  id: string; // e.g. WDR748291
+  playerId: string;
+  playerName: string;
+  coinsRequested: number;
+  currencyValue: number; // In INR ₹
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+  createdAt: number;
+  processedAt?: number;
+  adminId?: string;
+  notes?: string;
+}
+
+export interface SuspensionRecord {
+  id: string;
+  playerId: string;
+  adminId: string;
+  timestamp: number;
+  reason: string;
+  action: 'SUSPEND' | 'UNSUSPEND';
+}
+
+export interface AdminUser {
+  adminId: string;
+  role: 'SUPER_ADMIN' | 'SUPPORT_ADMIN';
+  name: string;
+  status: 'ACTIVE';
+  createdAt: number;
 }

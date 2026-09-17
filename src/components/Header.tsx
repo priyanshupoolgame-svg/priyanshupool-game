@@ -20,6 +20,8 @@ export const Header: React.FC<{ onOpenProfile: () => void; onOpenCoins: () => vo
   const { user } = useGame();
   const [copied, setCopied] = useState(false);
 
+  if (!user) return null;
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(user.playerId);

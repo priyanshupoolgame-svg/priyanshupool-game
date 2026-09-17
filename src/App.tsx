@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GameProvider } from './context/GameContext';
+import { GameProvider, useGame } from './context/GameContext';
 import { LobbyPage } from './pages/LobbyPage';
 import { MatchmakingPage } from './pages/MatchmakingPage';
 import { GamePage } from './pages/GamePage';
@@ -7,9 +7,13 @@ import { PlayWithFriendPage } from './pages/PlayWithFriendPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MatchHistoryPage } from './pages/MatchHistoryPage';
 import { AddCoinsPage } from './pages/AddCoinsPage';
-import { AdminPanelPage } from './pages/AdminPanelPage';
+import { WithdrawCoinsPage } from './pages/WithdrawCoinsPage';
+import { AuthPage } from './pages/AuthPage';
+import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 
 export const AppContent: React.FC = () => {
+  const { user, adminUser, adminLogout } = useGame();
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return window.location.pathname || '/';
   });
@@ -29,7 +33,31 @@ export const AppContent: React.FC = () => {
     setCurrentPath(path);
   };
 
-  const renderScreen = () => {
+  // ========================================================
+  // ROUTE PARTITION: ADMIN PORTAL (/admin)
+  // ========================================================
+  if (currentPath === '/admin' || currentPath.startsWith('/admin/')) {
+    if (!adminUser) {
+      return <AdminLoginPage onSuccess={() => navigate('/admin')} />;
+    }
+    return (
+      <AdminDashboardPage
+        onLogout={() => {
+          adminLogout();
+          navigate('/admin');
+        }}
+      />
+    );
+  }
+
+  // ========================================================
+  // ROUTE PARTITION: USER APPLICATION
+  // ========================================================
+  if (!user) {
+    return <AuthPage onSuccess={() => navigate('/')} />;
+  }
+
+  const renderUserScreen = () => {
     switch (currentPath) {
       case '/matchmaking':
         return <MatchmakingPage onNavigate={navigate} />;
@@ -45,8 +73,8 @@ export const AppContent: React.FC = () => {
       case '/add-coins':
       case '/coins':
         return <AddCoinsPage onNavigate={navigate} />;
-      case '/admin':
-        return <AdminPanelPage onNavigate={navigate} />;
+      case '/withdraw':
+        return <WithdrawCoinsPage onNavigate={navigate} />;
       case '/':
       case '/lobby':
       default:
@@ -56,7 +84,7 @@ export const AppContent: React.FC = () => {
 
   return (
     <div className="w-full min-h-screen bg-[#030712] text-slate-100 flex flex-col">
-      {renderScreen()}
+      {renderUserScreen()}
     </div>
   );
 };

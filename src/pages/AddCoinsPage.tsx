@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Coins, CheckCircle, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Coins, CheckCircle } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 interface AddCoinsPageProps {
@@ -10,6 +10,8 @@ export const AddCoinsPage: React.FC<AddCoinsPageProps> = ({ onNavigate }) => {
   const { user, coinRequests, requestCoins } = useGame();
   const [selectedAmount, setSelectedAmount] = useState(50000);
   const [submitted, setSubmitted] = useState(false);
+
+  if (!user) return null;
 
   const packages = [10000, 25000, 50000, 100000];
 
@@ -103,23 +105,6 @@ export const AddCoinsPage: React.FC<AddCoinsPageProps> = ({ onNavigate }) => {
             <span>Coin request submitted! Stored in database for Admin approval.</span>
           </div>
         )}
-
-        {/* Admin Shortcut Info */}
-        <div className="bg-[#0F172A] border border-purple-500/30 rounded-xl p-3.5 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <ShieldCheck className="w-5 h-5 text-purple-400" />
-            <div className="text-xs">
-              <p className="font-bold text-slate-200">Admin Architecture Ready</p>
-              <p className="text-slate-400">Approve pending coin requests in the Admin Panel</p>
-            </div>
-          </div>
-          <button
-            onClick={() => onNavigate('/admin')}
-            className="text-xs font-bold text-cyan-400 hover:text-cyan-300 py-1 px-2.5 rounded bg-slate-800"
-          >
-            Open Admin
-          </button>
-        </div>
 
         {/* Request History */}
         <div>
