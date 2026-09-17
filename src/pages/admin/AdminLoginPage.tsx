@@ -9,10 +9,16 @@ interface AdminLoginPageProps {
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onSuccess, onBackToPlayer }) => {
   const { adminLogin } = useGame();
-  const [adminId, setAdminId] = useState('789895');
-  const [password, setPassword] = useState('020203');
+  const [adminId, setAdminId] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const fillDevCredentials = () => {
+    setAdminId('789895');
+    setPassword('020203');
+    setError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,8 +121,15 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onSuccess, onBac
           </button>
         </form>
 
-        <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 text-center">
-          Prototype Master Credentials: <span className="text-purple-300 font-mono">789895</span> / <span className="text-purple-300 font-mono">020203</span>
+        <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 text-center flex flex-col items-center gap-1.5">
+          <span>Dev Credentials: <span className="text-purple-300 font-mono">789895</span> / <span className="text-purple-300 font-mono">020203</span></span>
+          <button
+            type="button"
+            onClick={fillDevCredentials}
+            className="text-[10px] text-purple-400 hover:text-purple-300 underline font-semibold transition-colors"
+          >
+            Auto-fill credentials
+          </button>
         </div>
 
         {onBackToPlayer && (

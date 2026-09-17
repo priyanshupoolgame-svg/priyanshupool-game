@@ -9,8 +9,7 @@ export const firebaseEnvConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ''
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
 };
 
 // Check which mandatory keys are missing
@@ -21,6 +20,7 @@ if (!firebaseEnvConfig.projectId) missingFirebaseKeys.push('VITE_FIREBASE_PROJEC
 if (!firebaseEnvConfig.appId) missingFirebaseKeys.push('VITE_FIREBASE_APP_ID');
 
 export const isFirebaseConfigured: boolean = missingFirebaseKeys.length === 0;
+export const isDemoMode: boolean = import.meta.env.VITE_DEMO_MODE === 'true';
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -35,12 +35,6 @@ if (isFirebaseConfigured) {
   } catch (error) {
     console.error('[8BALL PRO] Firebase initialization error:', error);
   }
-} else {
-  console.warn(
-    '[8BALL PRO] Firebase environment variables not fully configured. Missing:',
-    missingFirebaseKeys.join(', '),
-    'Running in graceful offline/demo mode until Vercel environment variables are populated.'
-  );
 }
 
 export { app, auth, db };

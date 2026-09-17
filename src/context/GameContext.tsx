@@ -18,18 +18,18 @@ import {
   sha256,
   generatePlayerId,
   generateTransactionId,
-  generateWithdrawalId,
-  authenticateAdmin
+  generateWithdrawalId
 } from '../utils/security';
-import { isFirebaseConfigured, auth, db } from '../firebase/config';
+import { isFirebaseConfigured, isDemoMode, auth, db } from '../firebase/config';
 import {
-  registerPlayerInFirebase,
   atomicAdminAddCoins,
   atomicAdminDeductCoins,
   atomicDeductMatchEntryFee,
   atomicPayoutMatchWinner,
   atomicRequestWithdrawal,
   atomicAdminRejectWithdrawal,
+  atomicSuspendPlayer,
+  atomicUnsuspendPlayer,
   listenToUserWallet,
   listenToUserProfile,
   listenToAllUsers,
@@ -40,8 +40,13 @@ import {
   joinMatchmakingQueue,
   leaveMatchmakingQueue
 } from '../firebase/services';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import {
+  loginAdminWithFirebase,
+  loginPlayerWithFirebase,
+  registerPlayerWithFirebase,
+  logoutFromFirebase,
+  subscribeToAuthState
+} from '../firebase/auth';
 
 interface GameContextType {
   // Connection state
@@ -232,18 +237,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(ALL_USERS_STORAGE_KEY, JSON.stringify(allUsers));
   }, [allUsers]);
 
-  // 2. Current Logged-In User
+  // 2. Current Logged-In User (Starts as null so unauthenticated users see Auth Page)
   const [user, setUser] = useState<UserProfile | null>(() => {
     const activeUserId = localStorage.getItem(SESSION_STORAGE_KEY);
     if (activeUserId) {
       const found = allUsers.find(u => u.id === activeUserId || u.playerId === activeUserId);
       if (found) return found;
-    }
-    // Default to Rahul for seamless demo experience if session not set yet
-    const defaultUser = allUsers[0] || null;
-    if (defaultUser) {
-      localStorage.setItem(SESSION_STORAGE_KEY, defaultUser.id);
-      return defaultUser;
     }
     return null;
   });
@@ -418,7 +417,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+    const unsubscribeAuth = subscribeToAuthState(async (fbUser) => {
       if (fbUser && db) {
         setIsFirebaseConnected(true);
         // Sync user wallet balance in real-time
@@ -502,39 +501,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Try Firebase Authentication if configured
     if (isFirebaseConfigured && auth && db) {
-      try {
-        let authEmail = cleanId;
-        // If user provided username or playerId, lookup email
-        if (!cleanId.includes('@')) {
-          const q = query(collection(db, 'users'), where('username', '==', cleanId), limit(1));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            authEmail = snap.docs[0].data().email;
-          } else {
-            const q2 = query(collection(db, 'users'), where('playerId', '==', cleanId), limit(1));
-            const snap2 = await getDocs(q2);
-            if (!snap2.empty) {
-              authEmail = snap2.docs[0].data().email;
-            }
-          }
-        }
-
-        const cred = await signInWithEmailAndPassword(auth, authEmail, password);
-        const fbUid = cred.user.uid;
-
-        const matched = allUsers.find(u => u.id === fbUid);
-        if (matched) {
-          setUser(matched);
-          localStorage.setItem(SESSION_STORAGE_KEY, matched.id);
-          return { success: true };
-        }
-      } catch (err: any) {
-        console.warn('Firebase login check:', err.code, err.message);
-        // Continue to check local storage
+      const res = await loginPlayerWithFirebase(cleanId, password);
+      if (res.success && res.userProfile) {
+        setUser(res.userProfile);
+        setAllUsers(prev => {
+          const exists = prev.some(u => u.id === res.userProfile!.id);
+          return exists ? prev.map(u => (u.id === res.userProfile!.id ? res.userProfile! : u)) : [res.userProfile!, ...prev];
+        });
+        localStorage.setItem(SESSION_STORAGE_KEY, res.userProfile.id);
+        return { success: true };
+      }
+      if (!isDemoMode) {
+        return { success: false, error: res.error || 'Invalid credentials.' };
       }
     }
 
-    // 2. Local Storage Authentication & Fallback
+    // 2. Local Storage Authentication & Fallback (Demo Mode)
     const cleanLower = cleanId.toLowerCase();
     const targetUser = allUsers.find(
       u => u.email.toLowerCase() === cleanLower || u.username.toLowerCase() === cleanLower || u.playerId.toLowerCase() === cleanLower
@@ -584,27 +566,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Firebase Registration
     if (isFirebaseConfigured && auth && db) {
-      try {
-        const { userProfile } = await registerPlayerInFirebase(
-          cleanEmail,
-          password,
-          cleanUsername,
-          cleanUsername,
-          avatarId
-        );
-        setUser(userProfile);
-        setAllUsers(prev => [userProfile, ...prev]);
-        localStorage.setItem(SESSION_STORAGE_KEY, userProfile.id);
+      const res = await registerPlayerWithFirebase(
+        cleanEmail,
+        password,
+        cleanUsername,
+        cleanUsername,
+        avatarId
+      );
+      if (res.success && res.userProfile) {
+        setUser(res.userProfile);
+        setAllUsers(prev => [res.userProfile!, ...prev]);
+        localStorage.setItem(SESSION_STORAGE_KEY, res.userProfile.id);
         return { success: true };
-      } catch (err: any) {
-        console.warn('Firebase registration error:', err);
-        if (err.code === 'auth/email-already-in-use') {
-          return { success: false, error: 'This email is already registered. Please login.' };
-        }
+      }
+      if (!isDemoMode) {
+        return { success: false, error: res.error || 'Registration failed.' };
       }
     }
 
-    // 2. Local Fallback Registration
+    // 2. Local Fallback Registration (Demo Mode)
     const existing = allUsers.find(
       u => u.username.toLowerCase() === cleanUsername.toLowerCase() || u.email.toLowerCase() === cleanEmail
     );
@@ -644,9 +624,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logoutUser = () => {
-    if (isFirebaseConfigured && auth) {
-      signOut(auth).catch(() => {});
-    }
+    logoutFromFirebase().catch(() => {});
     setUser(null);
     localStorage.removeItem(SESSION_STORAGE_KEY);
   };
@@ -663,25 +641,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ==========================================
 
   const adminLogin = async (adminIdInput: string, passwordInput: string): Promise<{ success: boolean; error?: string }> => {
-    const isValid = await authenticateAdmin(adminIdInput, passwordInput);
-    if (!isValid) {
-      return { success: false, error: 'Invalid Admin ID or Password.' };
+    const res = await loginAdminWithFirebase(adminIdInput, passwordInput);
+    if (!res.success || !res.adminUser) {
+      return { success: false, error: res.error || 'Invalid Admin ID or Password.' };
     }
 
-    const adminSession: AdminUser = {
-      adminId: adminIdInput.trim(),
-      role: 'SUPER_ADMIN',
-      name: 'Super Administrator',
-      status: 'ACTIVE',
-      createdAt: Date.now()
-    };
-
-    setAdminUser(adminSession);
-    sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(adminSession));
+    setAdminUser(res.adminUser);
+    sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(res.adminUser));
     return { success: true };
   };
 
   const adminLogout = () => {
+    logoutFromFirebase().catch(() => {});
     setAdminUser(null);
     sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
   };
@@ -858,6 +829,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const adminSuspendPlayer = (playerId: string, reason: string) => {
+    if (isFirebaseConfigured && db) {
+      atomicSuspendPlayer(playerId, reason, adminUser?.adminId || '789895').catch(err => {
+        console.error('Firebase suspension error:', err);
+      });
+    }
+
     setAllUsers(prev =>
       prev.map(u => (u.playerId === playerId ? { ...u, status: 'SUSPENDED', isBlocked: true, updatedAt: Date.now() } : u))
     );
@@ -877,6 +854,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const adminUnsuspendPlayer = (playerId: string) => {
+    if (isFirebaseConfigured && db) {
+      atomicUnsuspendPlayer(playerId, adminUser?.adminId || '789895').catch(err => {
+        console.error('Firebase unsuspension error:', err);
+      });
+    }
+
     setAllUsers(prev =>
       prev.map(u => (u.playerId === playerId ? { ...u, status: 'ACTIVE', isBlocked: false, updatedAt: Date.now() } : u))
     );

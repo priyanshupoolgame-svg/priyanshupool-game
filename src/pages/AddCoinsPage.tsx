@@ -102,7 +102,7 @@ export const AddCoinsPage: React.FC<AddCoinsPageProps> = ({ onNavigate }) => {
         {submitted && (
           <div className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 p-3 rounded-xl flex items-center space-x-2 text-xs font-bold animate-fadeIn">
             <CheckCircle className="w-4 h-4 flex-shrink-0" />
-            <span>Coin request submitted! Stored in database for Admin approval.</span>
+            <span>Coin request submitted! Stored in database for verification.</span>
           </div>
         )}
 

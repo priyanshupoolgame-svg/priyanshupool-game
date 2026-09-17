@@ -4,6 +4,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -711,3 +712,63 @@ export function listenToAdminWallet(
     }
   }, (err) => console.warn('Admin wallet listener error:', err));
 }
+
+export async function atomicSuspendPlayer(
+  targetPlayerId: string,
+  reason: string,
+  adminId: string = '789895'
+): Promise<{ success: boolean; error?: string }> {
+  if (!db) return { success: false, error: 'Database offline' };
+  try {
+    const usersQuery = query(collection(db, 'users'), where('playerId', '==', targetPlayerId), limit(1));
+    const userSnap = await getDocs(usersQuery);
+    if (userSnap.empty) return { success: false, error: 'Player not found' };
+
+    const userDoc = userSnap.docs[0];
+    await updateDoc(userDoc.ref, {
+      status: 'SUSPENDED',
+      isBlocked: true,
+      updatedAt: Date.now()
+    });
+
+    const suspId = 'SUSP_' + Date.now();
+    await setDoc(doc(db, 'suspensions', suspId), {
+      id: suspId,
+      playerId: targetPlayerId,
+      playerName: userDoc.data().name || targetPlayerId,
+      reason,
+      suspendedBy: adminId,
+      suspendedAt: Date.now(),
+      isActive: true,
+      serverTimestamp: serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Suspension failed' };
+  }
+}
+
+export async function atomicUnsuspendPlayer(
+  targetPlayerId: string,
+  _adminId: string = '789895'
+): Promise<{ success: boolean; error?: string }> {
+  if (!db) return { success: false, error: 'Database offline' };
+  try {
+    const usersQuery = query(collection(db, 'users'), where('playerId', '==', targetPlayerId), limit(1));
+    const userSnap = await getDocs(usersQuery);
+    if (userSnap.empty) return { success: false, error: 'Player not found' };
+
+    const userDoc = userSnap.docs[0];
+    await updateDoc(userDoc.ref, {
+      status: 'ACTIVE',
+      isBlocked: false,
+      updatedAt: Date.now()
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Unsuspension failed' };
+  }
+}
+

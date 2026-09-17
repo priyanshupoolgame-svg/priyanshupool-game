@@ -41,7 +41,7 @@ export const WithdrawCoinsPage: React.FC<WithdrawCoinsPageProps> = ({ onNavigate
     if (result.success) {
       setFeedback({
         type: 'success',
-        message: `Withdrawal request for ${selectedCoins.toLocaleString()} Coins (₹${inrValue}) submitted! Request stored for Admin approval.`
+        message: `Withdrawal request for ${selectedCoins.toLocaleString()} Coins (₹${inrValue}) submitted! Request stored for verification.`
       });
     } else {
       setFeedback({

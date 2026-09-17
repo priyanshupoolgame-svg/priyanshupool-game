@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
+import { isFirebaseConfigured, isDemoMode } from './firebase/config';
+import { FirebaseSetupError } from './components/FirebaseSetupError';
 import { LobbyPage } from './pages/LobbyPage';
 import { MatchmakingPage } from './pages/MatchmakingPage';
 import { GamePage } from './pages/GamePage';
@@ -11,7 +13,6 @@ import { WithdrawCoinsPage } from './pages/WithdrawCoinsPage';
 import { AuthPage } from './pages/AuthPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
-import { AdminAccessDenied } from './pages/admin/AdminAccessDenied';
 import { PlayerLayout } from './layouts/PlayerLayout';
 
 export const AppContent: React.FC = () => {
@@ -19,7 +20,9 @@ export const AppContent: React.FC = () => {
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return window.location.pathname || '/';
   });
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [devDemoOverride, setDevDemoOverride] = useState<boolean>(() => {
+    return sessionStorage.getItem('8ball_dev_preview') === 'true';
+  });
 
   useEffect(() => {
     const handlePopState = () => {
@@ -37,6 +40,22 @@ export const AppContent: React.FC = () => {
   };
 
   // ========================================================
+  // FIREBASE CONFIGURATION GUARD (PRODUCTION)
+  // In production, if Firebase environment variables are missing,
+  // do NOT start fake demo mode. Show clear configuration error.
+  // ========================================================
+  if (!isFirebaseConfigured && !isDemoMode && !devDemoOverride) {
+    return (
+      <FirebaseSetupError
+        onEnableDevDemo={() => {
+          sessionStorage.setItem('8ball_dev_preview', 'true');
+          setDevDemoOverride(true);
+        }}
+      />
+    );
+  }
+
+  // ========================================================
   // ROUTE PARTITION: ADMIN PORTAL (/admin)
   // Completely isolated from Player Application
   // ========================================================
@@ -47,43 +66,25 @@ export const AppContent: React.FC = () => {
         <AdminDashboardPage
           onLogout={() => {
             adminLogout();
-            setShowAdminLogin(false);
             navigate('/admin');
           }}
         />
       );
     }
 
-    // 2. If authenticated as a normal player, but NOT admin:
-    // Display Access Denied security screen unless explicitly proceeding to Admin Login
-    if (user && !adminUser && !showAdminLogin) {
-      return (
-        <AdminAccessDenied
-          player={user}
-          onBackToGame={() => navigate('/')}
-          onAdminLogin={() => setShowAdminLogin(true)}
-        />
-      );
-    }
-
-    // 3. Otherwise show dedicated Admin Login screen
+    // 2. Otherwise show dedicated Admin Login screen
     return (
       <AdminLoginPage
         onSuccess={() => {
-          setShowAdminLogin(false);
           navigate('/admin');
-        }}
-        onBackToPlayer={() => {
-          setShowAdminLogin(false);
-          navigate('/');
         }}
       />
     );
   }
 
   // ========================================================
-  // ROUTE PARTITION: USER / PLAYER APPLICATION
-  // No admin controls, links, badges, or leakage
+  // ROUTE PARTITION: USER / PLAYER APPLICATION (/)
+  // Completely separated from Admin Portal
   // ========================================================
   if (!user) {
     return <AuthPage onSuccess={() => navigate('/')} />;
