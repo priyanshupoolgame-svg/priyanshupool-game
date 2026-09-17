@@ -21,8 +21,32 @@ import {
   generateWithdrawalId,
   authenticateAdmin
 } from '../utils/security';
+import { isFirebaseConfigured, auth, db } from '../firebase/config';
+import {
+  registerPlayerInFirebase,
+  atomicAdminAddCoins,
+  atomicAdminDeductCoins,
+  atomicDeductMatchEntryFee,
+  atomicPayoutMatchWinner,
+  atomicRequestWithdrawal,
+  atomicAdminRejectWithdrawal,
+  listenToUserWallet,
+  listenToUserProfile,
+  listenToAllUsers,
+  listenToCoinTransactions,
+  listenToWithdrawalRequests,
+  listenToInvitations,
+  listenToAdminWallet,
+  joinMatchmakingQueue,
+  leaveMatchmakingQueue
+} from '../firebase/services';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 
 interface GameContextType {
+  // Connection state
+  isFirebaseConnected: boolean;
+
   // User Auth & Profile
   user: UserProfile | null;
   allUsers: UserProfile[];
@@ -384,13 +408,136 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [coinRequests]);
 
   // ==========================================
+  // REALTIME FIREBASE AUTH & FIRESTORE LISTENERS
+  // ==========================================
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || !auth) {
+      setIsFirebaseConnected(false);
+      return;
+    }
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser && db) {
+        setIsFirebaseConnected(true);
+        // Sync user wallet balance in real-time
+        const walletUnsub = listenToUserWallet(fbUser.uid, (newBalance) => {
+          setUser(prev => (prev ? { ...prev, coins: newBalance } : null));
+          setAllUsers(prev => prev.map(u => (u.id === fbUser.uid ? { ...u, coins: newBalance } : u)));
+        });
+
+        // Sync user profile in real-time
+        const profileUnsub = listenToUserProfile(fbUser.uid, (profileUpdate) => {
+          setUser(prev => (prev ? { ...prev, ...profileUpdate } : null));
+          setAllUsers(prev => prev.map(u => (u.id === fbUser.uid ? { ...u, ...profileUpdate } : u)));
+        });
+
+        return () => {
+          walletUnsub();
+          profileUnsub();
+        };
+      } else {
+        setIsFirebaseConnected(isFirebaseConfigured);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Real-time Global Collections synchronization
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+
+    const unsubs: Array<() => void> = [];
+
+    try {
+      unsubs.push(listenToAdminWallet((bal) => setAdminWallet(bal)));
+      unsubs.push(
+        listenToAllUsers((users) => {
+          if (users && users.length > 0) {
+            setAllUsers(users);
+          }
+        })
+      );
+      unsubs.push(
+        listenToCoinTransactions((txns) => {
+          if (txns && txns.length > 0) {
+            setTransactions(txns);
+          }
+        })
+      );
+      unsubs.push(
+        listenToWithdrawalRequests((reqs) => {
+          if (reqs && reqs.length > 0) {
+            setWithdrawalRequests(reqs);
+          }
+        })
+      );
+
+      if (user?.playerId) {
+        unsubs.push(
+          listenToInvitations(user.playerId, (invs) => {
+            if (invs && invs.length > 0) {
+              setInvitations(invs);
+            }
+          })
+        );
+      }
+    } catch (e) {
+      console.warn('Firebase realtime subscriptions notice:', e);
+    }
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
+  }, [user?.playerId]);
+
+  // ==========================================
   // USER AUTHENTICATION METHODS
   // ==========================================
 
   const loginUser = async (identifier: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    const cleanId = identifier.trim().toLowerCase();
+    const cleanId = identifier.trim();
+
+    // 1. Try Firebase Authentication if configured
+    if (isFirebaseConfigured && auth && db) {
+      try {
+        let authEmail = cleanId;
+        // If user provided username or playerId, lookup email
+        if (!cleanId.includes('@')) {
+          const q = query(collection(db, 'users'), where('username', '==', cleanId), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            authEmail = snap.docs[0].data().email;
+          } else {
+            const q2 = query(collection(db, 'users'), where('playerId', '==', cleanId), limit(1));
+            const snap2 = await getDocs(q2);
+            if (!snap2.empty) {
+              authEmail = snap2.docs[0].data().email;
+            }
+          }
+        }
+
+        const cred = await signInWithEmailAndPassword(auth, authEmail, password);
+        const fbUid = cred.user.uid;
+
+        const matched = allUsers.find(u => u.id === fbUid);
+        if (matched) {
+          setUser(matched);
+          localStorage.setItem(SESSION_STORAGE_KEY, matched.id);
+          return { success: true };
+        }
+      } catch (err: any) {
+        console.warn('Firebase login check:', err.code, err.message);
+        // Continue to check local storage
+      }
+    }
+
+    // 2. Local Storage Authentication & Fallback
+    const cleanLower = cleanId.toLowerCase();
     const targetUser = allUsers.find(
-      u => u.email.toLowerCase() === cleanId || u.username.toLowerCase() === cleanId || u.playerId.toLowerCase() === cleanId
+      u => u.email.toLowerCase() === cleanLower || u.username.toLowerCase() === cleanLower || u.playerId.toLowerCase() === cleanLower
     );
 
     if (!targetUser) {
@@ -435,7 +582,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Password must be at least 5 characters.' };
     }
 
-    // Check existing
+    // 1. Firebase Registration
+    if (isFirebaseConfigured && auth && db) {
+      try {
+        const { userProfile } = await registerPlayerInFirebase(
+          cleanEmail,
+          password,
+          cleanUsername,
+          cleanUsername,
+          avatarId
+        );
+        setUser(userProfile);
+        setAllUsers(prev => [userProfile, ...prev]);
+        localStorage.setItem(SESSION_STORAGE_KEY, userProfile.id);
+        return { success: true };
+      } catch (err: any) {
+        console.warn('Firebase registration error:', err);
+        if (err.code === 'auth/email-already-in-use') {
+          return { success: false, error: 'This email is already registered. Please login.' };
+        }
+      }
+    }
+
+    // 2. Local Fallback Registration
     const existing = allUsers.find(
       u => u.username.toLowerCase() === cleanUsername.toLowerCase() || u.email.toLowerCase() === cleanEmail
     );
@@ -475,6 +644,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logoutUser = () => {
+    if (isFirebaseConfigured && auth) {
+      signOut(auth).catch(() => {});
+    }
     setUser(null);
     localStorage.removeItem(SESSION_STORAGE_KEY);
   };
@@ -540,7 +712,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const prevAdminBal = adminWallet;
     const newAdminBal = adminWallet - amount;
 
-    // Atomic updates
+    // Trigger Firebase atomic operation if configured
+    if (isFirebaseConfigured && db) {
+      atomicAdminAddCoins(target.playerId, amount, adminUser?.adminId || '789895', reason).catch(err => {
+        console.error('Firebase admin add coins failed:', err);
+      });
+    }
+
+    // Atomic updates in local state
     setAdminWallet(newAdminBal);
     setAllUsers(prev => prev.map(u => (u.playerId === target.playerId ? { ...u, coins: newPlayerBal } : u)));
     if (user && user.playerId === target.playerId) {
@@ -589,6 +768,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newPlayerBal = target.coins - amount;
     const prevAdminBal = adminWallet;
     const newAdminBal = adminWallet + amount;
+
+    // Trigger Firebase atomic operation if configured
+    if (isFirebaseConfigured && db) {
+      atomicAdminDeductCoins(target.playerId, amount, adminUser?.adminId || '789895', reason).catch(err => {
+        console.error('Firebase admin deduct coins failed:', err);
+      });
+    }
 
     // Atomic updates
     setAdminWallet(newAdminBal);
@@ -744,6 +930,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const prevBal = user.coins;
     const newBal = user.coins - coins;
 
+    // Trigger Firebase atomic withdrawal lock if configured
+    if (isFirebaseConfigured && db) {
+      atomicRequestWithdrawal(user.id, user.playerId, user.name, coins).catch(err => {
+        console.error('Firebase withdrawal submission failed:', err);
+      });
+    }
+
     // Lock the requested coins from player wallet
     setUser(prev => (prev ? { ...prev, coins: newBal } : null));
     setAllUsers(prev => prev.map(u => (u.id === user.id ? { ...u, coins: newBal } : u)));
@@ -791,7 +984,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const wdr = withdrawalRequests.find(w => w.id === id);
     if (!wdr || wdr.status === 'REJECTED' || wdr.status === 'COMPLETED') return;
 
-    // Refund locked coins back to player
+    // Trigger Firebase atomic refund if configured
+    if (isFirebaseConfigured && db) {
+      atomicAdminRejectWithdrawal(id, adminUser?.adminId || '789895').catch(err => {
+        console.error('Firebase rejection refund failed:', err);
+      });
+    }
+
+    // Refund locked coins back to player in local state
     const target = allUsers.find(u => u.playerId === wdr.playerId);
     if (target) {
       const prevBal = target.coins;
@@ -948,6 +1148,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAllUsers(prev => prev.map(u => (u.id === updatedUser.id ? updatedUser : u)));
 
       if (won) {
+        // Trigger Firebase atomic winner payout if configured
+        if (isFirebaseConfigured && db) {
+          atomicPayoutMatchWinner('match_' + Date.now(), user.id, user.playerId, user.name, winReward).catch(err => {
+            console.warn('Firebase winner payout failed:', err);
+          });
+        }
+
         const txn: CoinTransaction = {
           id: generateTransactionId(),
           adminId: 'SYSTEM',
@@ -1069,6 +1276,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(updatedUser);
     setAllUsers(prev => prev.map(u => (u.id === user.id ? updatedUser : u)));
 
+    // Trigger Firebase atomic entry fee deduction & queue registration if configured
+    if (isFirebaseConfigured && db) {
+      atomicDeductMatchEntryFee(user.id, user.playerId, user.name, fee).catch(err => {
+        console.warn('Firebase match fee deduction notice:', err);
+      });
+      joinMatchmakingQueue(user.id, user.playerId, user.name, user.avatarId, fee).catch(() => {});
+    }
+
     // Record entry transaction
     const txn: CoinTransaction = {
       id: generateTransactionId(),
@@ -1134,6 +1349,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     matchmakingTimerRef.current = [];
 
     if (user && gameState === 'MATCHMAKING') {
+      if (isFirebaseConfigured && db) {
+        leaveMatchmakingQueue(user.id).catch(() => {});
+      }
       const refunded = user.coins + entryFee;
       const updatedUser: UserProfile = { ...user, coins: refunded };
       setUser(updatedUser);
@@ -1350,6 +1568,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <GameContext.Provider
       value={{
+        isFirebaseConnected,
         user,
         allUsers,
         loginUser,

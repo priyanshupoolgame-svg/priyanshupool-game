@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == 'ACTIVE'
+      );
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Allow user creation on initial signup
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      // Users can update non-sensitive profile info (name, avatar, lastActive), but NOT coins, role, status, or playerId
+      allow update: if (isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'role', 'status', 'isBlocked', 'playerId']))
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Player ID Index
+    match /playerIds/{playerId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Wallets
+    match /wallets/{userId} {
+      // Users can read only their own wallet; admins can read any
+      allow read: if isOwner(userId) || isAdmin();
+      // Only initial grant or authorized transactions can write
+      allow create: if isOwner(userId) && request.resource.data.balance == 100000;
+      allow update, delete: if isAdmin();
+    }
+
+    // Admin Wallet System
+    match /system/adminWallet {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Coin Transactions (Immutable audit log)
+    match /coinTransactions/{transactionId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.playerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.playerId ||
+        isAdmin()
+      );
+      // Transactions must be append-only
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // Immutable ledger
+    }
+
+    // Matchmaking Queue
+    match /matchmaking/{queueId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // Matches
+    match /matches/{matchId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      // Match players can update shot actions and game progression, but cannot illegally alter payout
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Invitations
+    match /invitations/{invitationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Coin Requests
+    match /coinRequests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Withdrawal Requests
+    match /withdrawalRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource.data.uid == request.auth.uid || 
+        resource.data.playerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.playerId ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.coins >= 500000;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Admin Users Directory
+    match /adminUsers/{adminDocId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Suspensions
+    match /suspensions/{suspensionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
