@@ -1,0 +1,6 @@
+{
+  "name": "8BALL PRO",
+  "description": "Polished 4-player online pool and billiards game with realistic physics, coin entry fees, matchmaking, and player stats.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
