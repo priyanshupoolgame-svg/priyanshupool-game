@@ -11,12 +11,15 @@ import { WithdrawCoinsPage } from './pages/WithdrawCoinsPage';
 import { AuthPage } from './pages/AuthPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminAccessDenied } from './pages/admin/AdminAccessDenied';
+import { PlayerLayout } from './layouts/PlayerLayout';
 
 export const AppContent: React.FC = () => {
   const { user, adminUser, adminLogout } = useGame();
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return window.location.pathname || '/';
   });
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -35,23 +38,52 @@ export const AppContent: React.FC = () => {
 
   // ========================================================
   // ROUTE PARTITION: ADMIN PORTAL (/admin)
+  // Completely isolated from Player Application
   // ========================================================
   if (currentPath === '/admin' || currentPath.startsWith('/admin/')) {
-    if (!adminUser) {
-      return <AdminLoginPage onSuccess={() => navigate('/admin')} />;
+    // 1. If authenticated as verified Admin, show Admin Dashboard
+    if (adminUser) {
+      return (
+        <AdminDashboardPage
+          onLogout={() => {
+            adminLogout();
+            setShowAdminLogin(false);
+            navigate('/admin');
+          }}
+        />
+      );
     }
+
+    // 2. If authenticated as a normal player, but NOT admin:
+    // Display Access Denied security screen unless explicitly proceeding to Admin Login
+    if (user && !adminUser && !showAdminLogin) {
+      return (
+        <AdminAccessDenied
+          player={user}
+          onBackToGame={() => navigate('/')}
+          onAdminLogin={() => setShowAdminLogin(true)}
+        />
+      );
+    }
+
+    // 3. Otherwise show dedicated Admin Login screen
     return (
-      <AdminDashboardPage
-        onLogout={() => {
-          adminLogout();
+      <AdminLoginPage
+        onSuccess={() => {
+          setShowAdminLogin(false);
           navigate('/admin');
+        }}
+        onBackToPlayer={() => {
+          setShowAdminLogin(false);
+          navigate('/');
         }}
       />
     );
   }
 
   // ========================================================
-  // ROUTE PARTITION: USER APPLICATION
+  // ROUTE PARTITION: USER / PLAYER APPLICATION
+  // No admin controls, links, badges, or leakage
   // ========================================================
   if (!user) {
     return <AuthPage onSuccess={() => navigate('/')} />;
@@ -83,9 +115,9 @@ export const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#030712] text-slate-100 flex flex-col">
+    <PlayerLayout currentPath={currentPath} onNavigate={navigate}>
       {renderUserScreen()}
-    </div>
+    </PlayerLayout>
   );
 };
 

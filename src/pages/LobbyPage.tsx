@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { PlayCircle, Users, Key, History, User, Coins, Landmark, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useGame } from '../context/GameContext';
-import { Header } from '../components/Header';
 import { MatchEntryConfirmModal, LowCoinsModal } from '../components/Modals';
 
 interface LobbyPageProps {
@@ -60,11 +59,6 @@ export const LobbyPage: React.FC<LobbyPageProps> = ({ onNavigate }) => {
 
   return (
     <div className="min-h-screen bg-[#030712] flex flex-col pb-8">
-      <Header
-        onOpenProfile={() => onNavigate('/profile')}
-        onOpenCoins={() => onNavigate('/add-coins')}
-      />
-
       <main className="flex-1 max-w-md w-full mx-auto px-4 py-5 space-y-4">
         {/* Account Suspended Alert Banner */}
         {isSuspended && (

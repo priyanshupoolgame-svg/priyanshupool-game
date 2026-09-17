@@ -51,6 +51,7 @@ export interface UserProfile {
   playerId: string;
   username: string;
   email: string;
+  phone?: string;
   passwordHash: string;
   name: string;
   avatarId: number;

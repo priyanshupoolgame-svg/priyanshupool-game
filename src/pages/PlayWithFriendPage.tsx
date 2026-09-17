@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Copy, Check, Send, PlusCircle, Mail } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Send, PlusCircle, Mail, AlertTriangle } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 interface PlayWithFriendPageProps {
@@ -15,6 +15,7 @@ export const PlayWithFriendPage: React.FC<PlayWithFriendPageProps> = ({ onNaviga
 
   if (!user) return null;
 
+  const isSuspended = user.status === 'SUSPENDED' || user.isBlocked;
   const pendingInvites = invitations.filter(i => i.status === 'PENDING' && i.toPlayerId === user.playerId);
 
   const handleCopy = () => {
@@ -25,6 +26,11 @@ export const PlayWithFriendPage: React.FC<PlayWithFriendPageProps> = ({ onNaviga
 
   const handleSendInvite = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSuspended) {
+      setSentNotice('Account suspended: cannot send match invitations.');
+      setTimeout(() => setSentNotice(null), 3000);
+      return;
+    }
     if (!targetId.trim()) return;
     sendFriendInvite(targetId.trim().toUpperCase(), selectedFee);
     setSentNotice(`Invitation sent to ${targetId.trim().toUpperCase()}!`);
@@ -33,11 +39,21 @@ export const PlayWithFriendPage: React.FC<PlayWithFriendPageProps> = ({ onNaviga
   };
 
   const handleAccept = (invite: any) => {
+    if (isSuspended) {
+      setSentNotice('Account suspended: cannot accept match invitations.');
+      setTimeout(() => setSentNotice(null), 3000);
+      return;
+    }
     acceptFriendInvite(invite);
     onNavigate('/game');
   };
 
   const handleCreateRoom = () => {
+    if (isSuspended) {
+      setSentNotice('Account suspended: cannot create private matches.');
+      setTimeout(() => setSentNotice(null), 3000);
+      return;
+    }
     createPrivateRoom(selectedFee);
     onNavigate('/game');
   };
@@ -56,6 +72,18 @@ export const PlayWithFriendPage: React.FC<PlayWithFriendPageProps> = ({ onNaviga
       </div>
 
       <div className="space-y-4">
+        {isSuspended && (
+          <div className="bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 flex items-start space-x-2.5 text-rose-300">
+            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-bold text-xs text-rose-400">Multiplayer Restricted</h4>
+              <p className="text-[11px] text-rose-200/80 mt-0.5">
+                Your account is currently suspended. Sending invites, accepting invitations, and creating private matches are disabled.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Your ID Card */}
         <div className="bg-[#0F172A] border border-slate-800 rounded-xl p-4">
           <span className="text-[11px] font-bold text-slate-400 tracking-wider">YOUR UNIQUE PLAYER ID</span>

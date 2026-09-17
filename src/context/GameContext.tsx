@@ -1482,6 +1482,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Friend System
   const sendFriendInvite = (toPlayerId: string, fee: number) => {
     if (!user) return;
+    if (user.status === 'SUSPENDED' || user.isBlocked) return;
     const newInvite: FriendInvitation = {
       id: 'inv_' + Date.now(),
       fromPlayerId: user.playerId,
@@ -1496,7 +1497,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const acceptFriendInvite = (invite: FriendInvitation) => {
     if (!user || user.coins < invite.entryFee) return;
-    if (user.status === 'SUSPENDED') return;
+    if (user.status === 'SUSPENDED' || user.isBlocked) return;
 
     const prevBal = user.coins;
     const newBal = user.coins - invite.entryFee;
@@ -1531,7 +1532,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createPrivateRoom = (fee: number): { success: boolean; error?: string } => {
     if (!user) return { success: false, error: 'Please log in.' };
-    if (user.status === 'SUSPENDED') {
+    if (user.status === 'SUSPENDED' || user.isBlocked) {
       return { success: false, error: 'Your account has been suspended. Please contact support.' };
     }
     if (user.coins < fee) {

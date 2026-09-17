@@ -4,9 +4,10 @@ import { useGame } from '../../context/GameContext';
 
 interface AdminLoginPageProps {
   onSuccess: () => void;
+  onBackToPlayer?: () => void;
 }
 
-export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onSuccess }) => {
+export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onSuccess, onBackToPlayer }) => {
   const { adminLogin } = useGame();
   const [adminId, setAdminId] = useState('789895');
   const [password, setPassword] = useState('020203');
@@ -117,6 +118,16 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onSuccess }) => 
         <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 text-center">
           Prototype Master Credentials: <span className="text-purple-300 font-mono">789895</span> / <span className="text-purple-300 font-mono">020203</span>
         </div>
+
+        {onBackToPlayer && (
+          <button
+            type="button"
+            onClick={onBackToPlayer}
+            className="w-full mt-3 py-2 text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            ← Return to Player Game
+          </button>
+        )}
       </div>
     </div>
   );
